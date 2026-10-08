@@ -1,0 +1,16 @@
+{
+  "virtual_capital_usd": 50.0,
+  "chains": ["solana", "base", "robinhood"],
+  "max_position_pct": 10.0,
+  "max_concurrent_positions": 5,
+  "min_wallet_win_rate": 0.55,
+  "min_wallet_trades": 20,
+  "min_wallet_tokens": 3,
+  "watched_pools_per_chain": 1,
+  "fee_bps": 100.0,
+  "slippage_bps": 100.0,
+  "gas_usd": {"solana": 0.02, "base": 0.05, "robinhood": 0.05, "ethereum": 2.0, "bsc": 0.10},
+  "http_min_interval_seconds": 6.5,
+  "http_timeout_seconds": 15.0,
+  "scan_budget_seconds": 150.0
+}

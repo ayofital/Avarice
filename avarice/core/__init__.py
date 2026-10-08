@@ -1,0 +1,1 @@
+"""Core models and paper engine; no eager imports or network side effects."""

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avarice-paper-scout"
+version = "0.1.0"
+description = "Read-only multi-chain memecoin scouting and a persistent paper portfolio"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Avarice contributors"}]
+dependencies = []
+
+[project.scripts]
+avarice = "avarice.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["avarice*"]

@@ -1,0 +1,2 @@
+# Python 3.11+ standard library only.
+# sqlite3 is built in; no pip installation is necessary.
