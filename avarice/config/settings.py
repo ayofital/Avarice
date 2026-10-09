@@ -38,6 +38,12 @@ class AvariceConfig:
     http_timeout_seconds: float = 15.0
     http_min_interval_seconds: float = 6.5
     scan_budget_seconds: float = 150.0
+    safety_max_age_seconds: float = 600.0
+    research_enabled: bool = True
+    research_horizon_minutes: float = 60.0
+    research_max_label_delay_minutes: float = 30.0
+    research_min_samples: int = 20
+    research_min_validation_days: int = 3
 
     def __post_init__(self):
         errors = validate_config(self)
@@ -51,7 +57,8 @@ class AvariceConfig:
 def validate_config(settings):
     errors = []
     for name, value in asdict(settings).items():
-        if isinstance(value, (int, float)) and (not math.isfinite(value) or value <= 0):
+        if (name != "research_enabled" and isinstance(value, (int, float))
+                and (not math.isfinite(value) or value <= 0)):
             errors.append(f"{name} must be finite and positive")
     if not 0 < settings.max_position_pct <= 10:
         errors.append("max_position_pct must be at most 10")
@@ -70,9 +77,18 @@ def validate_config(settings):
         value = settings.gas_usd.get(chain)
         if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             errors.append(f"gas_usd.{chain} must be finite and positive")
-    for name in ("max_concurrent_positions", "min_wallet_trades", "min_wallet_tokens", "watched_pools_per_chain"):
-        if not isinstance(getattr(settings, name), int):
+    for name in ("max_concurrent_positions", "min_wallet_trades", "min_wallet_tokens", "watched_pools_per_chain",
+                 "research_min_samples", "research_min_validation_days"):
+        if type(getattr(settings, name)) is not int:
             errors.append(f"{name} must be an integer")
+    if type(settings.research_enabled) is not bool:
+        errors.append("research_enabled must be boolean")
+    for name in ("safety_max_age_seconds", "research_horizon_minutes", "research_max_label_delay_minutes"):
+        value = getattr(settings, name)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            errors.append(f"{name} must be finite and positive")
+    if type(settings.safety_max_age_seconds) in (int, float) and settings.safety_max_age_seconds > 600:
+        errors.append("safety_max_age_seconds must be at most 600")
     if settings.max_concurrent_positions > 5:
         errors.append("max_concurrent_positions must be at most 5")
     return errors

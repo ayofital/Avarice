@@ -8,6 +8,12 @@ from avarice.storage.db import Storage
 from test_wallets import event
 
 
+def fixture_security(pool, now=None):
+    return dict(chain=pool.chain.value, token_address=pool.token_address,
+                checked_at=now or utcnow(), provider="synthetic-test",
+                status="limited_checks_passed", reasons=[], checks={}, missing_fields=[])
+
+
 class FakeMarket:
     def __init__(self):
         self.errors = []
@@ -39,7 +45,7 @@ class EngineTests(unittest.TestCase):
             return market
         settings = AvariceConfig(chains=("solana", "base"), watched_pools_per_chain=1)
         with Storage(scratch_dir()/"diagnostics.sqlite3") as store:
-            result = AvariceEngine(store, settings, adapter_factory=factory).scan()
+            result = AvariceEngine(store, settings, adapter_factory=factory, security_checker=fixture_security).scan()
             self.assertIn("solana parse warning", result["chains"]["solana"]["errors"])
             self.assertEqual(result["chains"]["base"]["errors"], [])
 
@@ -54,7 +60,7 @@ class EngineTests(unittest.TestCase):
         with Storage(scratch_dir()/"budget.sqlite3") as store:
             store.set_state("watchlist", {"solana": {address: {"expires_at": expiry}
                             for address in ("pool", "pool2", "pool3")}})
-            result = AvariceEngine(store, settings, adapter_factory=lambda chain: market).scan()
+            result = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=fixture_security).scan()
             self.assertEqual(result["chains"]["solana"]["watched_pools"], 1)
             self.assertEqual(len(store.get_state("watchlist")["solana"]), 3)
 
@@ -64,7 +70,7 @@ class EngineTests(unittest.TestCase):
                                  min_wallet_trades=1, min_wallet_tokens=1)
         market = FakeMarket()
         with Storage(scratch_dir()/"copy.sqlite3") as store:
-            engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market)
+            engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=fixture_security)
             engine.scan()
             market.events.append(event("fresh-buy", "buy", 10, 10, timestamp=utcnow()))
             result = engine.scan()
@@ -106,7 +112,7 @@ class EngineTests(unittest.TestCase):
                       patch("avarice.core.pool_watcher.utcnow", side_effect=lambda: clock[0]),
                       patch("avarice.core.wallet_tracker.utcnow", side_effect=lambda: clock[0]),
                       patch("avarice.core.simulator.utcnow", side_effect=lambda: clock[0])):
-                    engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market)
+                    engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=fixture_security)
                     first = engine.scan()
                     prior = next(row for row in engine.wallet_metrics() if row["address"] == "wallet")
                     self.assertTrue(prior["qualified"])
@@ -156,7 +162,7 @@ class EngineTests(unittest.TestCase):
                       patch("avarice.core.pool_watcher.utcnow", side_effect=lambda: clock[0]),
                       patch("avarice.core.wallet_tracker.utcnow", side_effect=lambda: clock[0]),
                       patch("avarice.core.simulator.utcnow", side_effect=lambda: clock[0])):
-                    engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market)
+                    engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=fixture_security)
                     engine.scan()
                     self.assertFalse(engine.wallet_metrics()[0]["qualified"])
                     market.events.extend([
@@ -180,7 +186,7 @@ class EngineTests(unittest.TestCase):
                                  min_wallet_trades=1, min_wallet_tokens=1)
         market = FakeMarket()
         with Storage(scratch_dir()/"engine-gap.sqlite3") as store:
-            engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market)
+            engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=fixture_security)
             engine.scan()
             market.events = [event("late-page", "buy", 10, 10, timestamp=utcnow())]
             result = engine.scan()
@@ -196,7 +202,7 @@ class EngineTests(unittest.TestCase):
         market = FakeMarket()
         settings = AvariceConfig(chains=("solana",), watched_pools_per_chain=1)
         with Storage(scratch_dir()/"engine.sqlite3") as store:
-            engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market)
+            engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=fixture_security)
             first = engine.scan()
             self.assertEqual(first["observations_added"], 2)
             self.assertEqual(first["positions_opened"], 0)

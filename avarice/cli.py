@@ -9,7 +9,7 @@ def parser():
     result.add_argument("--chains", help="Comma-separated chains; overrides local settings")
     result.add_argument("--json", action="store_true", help="Print machine-readable output")
     commands = result.add_subparsers(dest="command", required=True)
-    for name in ("scan", "update", "status", "positions", "wallets", "report", "config"):
+    for name in ("scan", "update", "status", "positions", "wallets", "report", "config", "security", "research"):
         commands.add_parser(name)
     return result
 
@@ -41,6 +41,11 @@ def run_command(args):
                 output = [position.to_dict() for position in store.load_portfolio().positions]
             elif args.command == "wallets":
                 output = engine.wallet_metrics()
+            elif args.command == "security":
+                output = store.security_checks()
+            elif args.command == "research":
+                from avarice.core.research import PatternResearch
+                output = PatternResearch(store, settings).summary()
             elif args.command == "report":
                 from avarice.reporting.telegram import TelegramReporter
                 print(TelegramReporter(store, settings).render())
@@ -49,6 +54,8 @@ def run_command(args):
                 output = store.load_portfolio().summary()
                 output["chains"] = list(settings.chains)
                 output["latest_scan"] = store.latest_scan()
+                from avarice.core.research import PatternResearch
+                output["research"] = PatternResearch(store, settings).summary()
             print(json.dumps(output, indent=None if args.json else 2, allow_nan=False))
             return 2 if isinstance(output, dict) and output.get("errors") else 0
     except (OSError, ValueError, TypeError, sqlite3.Error) as exc:

@@ -16,7 +16,8 @@ class Simulator:
             quote_age = (parse_time(utcnow()) - parse_time(pool.observed_at)).total_seconds()
         except (ValueError, TypeError):
             return None
-        if quote_age < 0 or quote_age > settings.quote_max_age_seconds:
+        if (quote_age < 0 or quote_age > settings.quote_max_age_seconds
+                or pool.safety_status != "limited_checks_passed"):
             return None
         if (len(portfolio.open_positions) >= settings.max_concurrent_positions
                 or portfolio.max_drawdown_pct >= settings.max_drawdown_pct
@@ -61,7 +62,9 @@ class Simulator:
                 age = (timestamp - parse_time(quote.observed_at)).total_seconds() if quote else float("inf")
             except (ValueError, TypeError):
                 age = float("inf")
-            if (quote is None or age < 0 or age > self.settings.quote_max_age_seconds
+            if (quote is None or quote.key != position.pool.key
+                    or quote.token_address != position.pool.token_address
+                    or age < 0 or age > self.settings.quote_max_age_seconds
                     or not math.isfinite(quote.price_usd) or quote.price_usd < 0):
                 position.quote_missing = True
                 continue
@@ -70,7 +73,9 @@ class Simulator:
             position.last_quote_at = quote.observed_at
             position.pool = quote
             reason = None
-            if quote.liquidity_usd == 0 or quote.price_usd == 0:
+            if quote.safety_status == "unsafe":
+                reason = "unsafe_token_writeoff"
+            elif quote.liquidity_usd == 0 or quote.price_usd == 0:
                 reason = "liquidity_lost_writeoff"
             elif quote.price_usd <= position.entry_price_usd * (1 - self.settings.stop_loss_pct / 100):
                 reason = "stop_loss"
@@ -81,7 +86,7 @@ class Simulator:
             elif (position.pool.chain.value, position.wallet_followed, position.pool.token_address) in followed_sells:
                 reason = "followed_wallet_sell"
             if reason:
-                price = 0.0 if reason == "liquidity_lost_writeoff" else quote.price_usd
+                price = 0.0 if reason in ("liquidity_lost_writeoff", "unsafe_token_writeoff") else quote.price_usd
                 self.close_position(position, price, reason)
                 closed.append(position)
         self.portfolio.mark()

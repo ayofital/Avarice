@@ -13,7 +13,10 @@ class Storage:
         self.conn = sqlite3.connect(str(self.db_path), timeout=30, isolation_level=None)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=30000")
-        self.conn.executescript("""
+        required = {"avarice_state", "avarice_pools", "avarice_events", "avarice_scans", "avarice_security_checks"}
+        existing = {row[0] for row in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not required.issubset(existing):
+            self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS avarice_state(name TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS avarice_pools(
                 chain TEXT, address TEXT, payload TEXT NOT NULL,
@@ -23,9 +26,14 @@ class Storage:
                 event_id TEXT PRIMARY KEY, chain TEXT NOT NULL, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS avarice_scans(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS avarice_security_checks(
+                chain TEXT NOT NULL, token_address TEXT NOT NULL,
+                checked_at TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(chain,token_address,checked_at));
         """)
-        initial = json.dumps(VirtualPortfolio.new(capital).to_dict(), allow_nan=False)
-        self.conn.execute("INSERT OR IGNORE INTO avarice_state(name,payload) VALUES ('portfolio',?)", (initial,))
+        if self.get_state("portfolio") is None:
+            initial = json.dumps(VirtualPortfolio.new(capital).to_dict(), allow_nan=False)
+            self.conn.execute("INSERT OR IGNORE INTO avarice_state(name,payload) VALUES ('portfolio',?)", (initial,))
 
     def __enter__(self):
         return self
@@ -80,6 +88,25 @@ class Storage:
         cursor = self.conn.execute("INSERT OR IGNORE INTO avarice_events(event_id,chain,payload) VALUES (?,?,?)",
                                    (chain + ":" + event["id"], chain, json.dumps(event, allow_nan=False)))
         return cursor.rowcount == 1
+
+    def record_security(self, check):
+        self.conn.execute("""INSERT OR IGNORE INTO avarice_security_checks
+            (chain,token_address,checked_at,payload) VALUES (?,?,?,?)""",
+            (check["chain"], check["token_address"], check["checked_at"],
+             json.dumps(check, allow_nan=False)))
+
+    def latest_security(self, chain, token_address):
+        row = self.conn.execute("""SELECT payload FROM avarice_security_checks
+            WHERE chain=? AND token_address=? ORDER BY checked_at DESC LIMIT 1""",
+            (chain, token_address)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def security_checks(self):
+        rows = self.conn.execute("""SELECT c.payload FROM avarice_security_checks c
+            WHERE c.checked_at=(SELECT max(p.checked_at) FROM avarice_security_checks p
+                WHERE p.chain=c.chain AND p.token_address=c.token_address)
+            ORDER BY c.chain,c.token_address""")
+        return [json.loads(row[0]) for row in rows]
 
     def save_scan(self, result):
         self.conn.execute("INSERT INTO avarice_scans(timestamp,payload) VALUES (?,?)",

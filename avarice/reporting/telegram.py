@@ -79,6 +79,10 @@ class TelegramReporter:
                              f"{stats['eligible_pools']} eligible, {stats['watched_pools']} watched")
             lines.append(f"New trade observations: {scan['observations_added']} | "
                          f"Paper opened/closed: {scan['positions_opened']}/{scan['positions_closed']}")
+            risk = scan.get("security")
+            if risk:
+                lines.append(f"Screened pool quotes (cached): limited {risk['limited_checks_passed']} | "
+                             f"unsafe {risk['unsafe']} | unknown {risk['unknown']}")
             if scan["errors"]:
                 lines.append(f"Data errors: {len(scan['errors'])} (showing up to 3)")
                 lines.extend(clean_label(error, 140) for error in scan["errors"][:3])
@@ -89,7 +93,15 @@ class TelegramReporter:
                             key=lambda position: parse_time(position.entry_time), reverse=True)
             lines.extend(["", f"Open paper positions (showing {min(5, len(opened))} of {len(opened)}):"])
             lines.extend(format_position_line(position) for position in opened[:5])
-        lines.extend(["", "Sampled public-pool data is not proof of profitability or complete wallet history.",
-                      "Fees, slippage and gas are assumptions; safety/ownership remain unverified.",
-                      "No real funds, live swaps, model calls or automated strategy learning."])
+        from avarice.core.research import PatternResearch
+        research = PatternResearch(self.storage, self.settings).summary(now=generated)
+        lines.extend(["", f"Research only: {research['labelled']} labelled | {research['pending']} pending | "
+                      f"{research['excluded']} excluded | {research['snapshot_count']} snapshots",
+                      f"Rule evaluation: {research['recommendation']} | "
+                      f"selected training/validation: {research['selected_training_count']}/{research['selected_validation_count']}",
+                      "Hypothetical research outcomes are not paper-account trades; no automatic rule promotion.",
+                      "Sampled public-pool data is not proof of profitability or complete wallet history.",
+                      "Limited checks are not proof of tradability or issuer authenticity.",
+                      "Fees, slippage and gas are assumptions; sender ownership remains unverified.",
+                      "No real funds, live swaps or runtime model calls."])
         return "\n".join(lines)

@@ -27,6 +27,22 @@ def position(symbol, entry_hours_ago, exit_hours_ago=None, pnl=0.0):
 
 
 class ReportingTests(unittest.TestCase):
+    def test_report_shows_cached_risk_and_research_without_claiming_safety_or_learning_returns(self):
+        with Storage(scratch_dir()/"evidence-report.sqlite3") as store:
+            store.save_scan(dict(timestamp=NOW,finished_at=NOW,health="ok",chains={},errors=[],
+                                 observations_added=0,positions_opened=0,positions_closed=0,
+                                 security=dict(limited_checks_passed=1,unsafe=2,unknown=3)))
+            with patch("avarice.reporting.telegram.utcnow",return_value=NOW):
+                report=TelegramReporter(store,AvariceConfig()).render()
+            self.assertIn("Screened pool quotes (cached): limited 1 | unsafe 2 | unknown 3",report)
+            self.assertIn("Research only: 0 labelled | 0 pending | 0 excluded",report)
+            self.assertIn("Rule evaluation: insufficient_evidence",report)
+            self.assertIn("not paper-account trades",report)
+            self.assertNotIn("no automated strategy learning",report.lower())
+            self.assertNotIn("no real funds, live swaps, model calls or automated strategy learning",report.lower())
+            self.assertIn("not proof of profitability",report)
+            self.assertIn("not proof of tradability or issuer authenticity",report)
+
     def test_report_contains_only_recent_entry_exit_details_and_net_realized_pnl(self):
         with Storage(scratch_dir()/"report-window.sqlite3") as store:
             portfolio = store.load_portfolio()
