@@ -15,10 +15,10 @@ class AvariceConfig:
     max_concurrent_positions: int = 5
     min_position_usd: float = 1.0
     min_wallet_win_rate: float = 0.55
-    min_wallet_trades: int = 20
-    min_wallet_tokens: int = 3
-    max_wallet_hold_hours: float = 6.0
-    max_hold_hours: float = 24.0
+    min_wallet_trades: int = 10
+    min_wallet_tokens: int = 2
+    max_wallet_hold_hours: float = 2.0
+    max_hold_hours: float = 2.0
     stop_loss_pct: float = 30.0
     take_profit_pct: float = 100.0
     max_drawdown_pct: float = 20.0
@@ -31,13 +31,13 @@ class AvariceConfig:
         "solana": 0.02, "base": 0.05, "robinhood": 0.05,
         "ethereum": 2.0, "bsc": 0.10,
     })
-    watched_pools_per_chain: int = 1
+    watched_pools_per_chain: int = 3
     watch_hours: float = 6.0
-    signal_max_age_seconds: float = 120.0
+    signal_max_age_seconds: float = 60.0
     quote_max_age_seconds: float = 300.0
     http_timeout_seconds: float = 15.0
     http_min_interval_seconds: float = 6.5
-    scan_budget_seconds: float = 150.0
+    scan_budget_seconds: float = 120.0
     safety_max_age_seconds: float = 600.0
     research_enabled: bool = True
     research_horizon_minutes: float = 60.0
