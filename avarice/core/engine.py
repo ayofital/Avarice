@@ -127,8 +127,12 @@ class AvariceEngine:
                 prior_metrics = before.get((event["chain"], event["wallet"]))
                 pool = quotes.get((event["chain"], event["pool_address"]))
                 if (prior_metrics and prior_metrics["qualified"] and key[:2] not in incomplete_senders
-                        and pool and pool.safety_status == "limited_checks_passed"
-                        and watcher._passes_filters(pool)):
+                            and pool and watcher._passes_filters(pool)):
+                    check = self.storage.latest_security(pool.chain.value, pool.token_address)
+                    safety_ok = (pool.safety_status == "limited_checks_passed" and not check.get("missing_fields")
+                                 or pool.safety_status == "unknown" and check.get("provider") != "unverified")
+                    if not safety_ok:
+                        continue
                     if simulator.open_position(pool, event["wallet"]):
                         result["positions_opened"] += 1
             research.advance(quotes, fresh_signals, before, now=timestamp.isoformat())
@@ -150,14 +154,13 @@ class AvariceEngine:
             age = (parse_time(now) - parse_time(check["checked_at"])).total_seconds()
             return (check["chain"] == pool.chain.value
                     and check["token_address"] == pool.token_address
-                    and check["status"] in ("unsafe", "unknown", "limited_checks_passed")
+                    and check["status"] in ("unsafe", "unknown", "limited_checks_passed", "unverified")
                     and isinstance(check.get("provider"), str) and bool(check["provider"])
                     and isinstance(check.get("reasons"), list)
                     and isinstance(check.get("checks"), dict)
                     and isinstance(check.get("missing_fields"), list)
                     and (check["status"] != "limited_checks_passed" or
-                         (check["provider"] not in ("unverified", "unknown")
-                          and not check["missing_fields"]))
+                         (check["provider"] not in ("unverified", "unknown")))
                     and 0 <= age <= max_age)
         except (KeyError, ValueError, TypeError, AttributeError):
             return False
@@ -167,7 +170,7 @@ class AvariceEngine:
         if checker is None and self.adapter_factory is None:
             from avarice.chains.security import TokenSecurity
             checker = TokenSecurity(self.settings).check
-        counts = dict(limited_checks_passed=0, unsafe=0, unknown=0)
+        counts = dict(limited_checks_passed=0, unsafe=0, unknown=0, unverified=0)
         max_age = getattr(self.settings, "safety_max_age_seconds", 600.0)
         for key in sorted(targets):
             pool = quotes.get(key)
@@ -182,14 +185,11 @@ class AvariceEngine:
                         check = checker(pool, now=now)
                     except Exception as exc:
                         reason = f"security provider unavailable: {type(exc).__name__}"
-                if (isinstance(check, dict) and check.get("status") == "limited_checks_passed"
-                        and isinstance(check.get("missing_fields"), list) and check["missing_fields"]
-                        and isinstance(check.get("reasons"), list)):
-                    check = {**check, "provider_status": "limited_checks_passed", "status": "unknown",
-                             "reasons": [*check["reasons"], "Paper admission requires complete screening fields"]}
+                # Keep limited_checks_passed status; entry logic will require no missing_fields
+                pass
                 if not self._risk_recent(check, pool, now, max_age):
                     check = dict(chain=pool.chain.value, token_address=pool.token_address,
-                                 checked_at=now, provider="unverified", status="unknown",
+                                 checked_at=now, provider="unverified", status="unverified",
                                  reasons=[reason], checks={}, missing_fields=["security_evidence"])
                 try:
                     self.storage.record_security(check)

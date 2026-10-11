@@ -7,8 +7,17 @@ import math
 from avarice.core.models import Chain, parse_time, utcnow
 
 VERSION = "prospective_fixed_horizon_v1"
-RULES = (("baseline", None, None), ("higher_liquidity", "liquidity_usd", 5000.0),
-         ("high_volume_to_liquidity", "volume_to_liquidity", 0.5))
+# Meme-trader thesis hypotheses (fixed, evaluated prospectively, never auto-promoted):
+# - Fresh launches with high buy pressure flip fast (minutes)
+# - High liquidity + high volume/liquidity = sustainable momentum
+# - Strong 5m price change + buy pressure = continuation
+# - Low pool age (<1h) + volume spike = early entry window
+RULES = (("baseline", None, None),
+         ("high_liquidity", "liquidity_usd", 5000.0),
+         ("high_vol_to_liq", "volume_to_liquidity", 0.5),
+         ("fresh_pool_high_buy_pressure", "pool_age_minutes", 60.0),
+         ("momentum_5m_buy_dominance", "price_change_5m_pct", 5.0),
+         ("high_buy_pressure", "buy_sell_ratio_5m", 2.0))
 LIMITATIONS = ["Hypotheses, not proven strategies; never automatically promoted.",
                "Sampled public pools and unverified senders; incomplete market coverage.",
                "Hypothetical $5 entries; estimated costs, not executable fills.",
@@ -112,6 +121,8 @@ class PatternResearch:
     def _features(self, quote, event, prior, timestamp):
         observed, created = time_of(quote.observed_at), time_of(quote.created_at)
         volume, liquidity = number(quote.volume_24h_usd), number(quote.liquidity_usd)
+        buys_5m, sells_5m = number(quote.buys_5m), number(quote.sells_5m)
+        buy_sell_ratio = (buys_5m / max(sells_5m, 1)) if (buys_5m is not None and sells_5m is not None) else None
         previous = self.storage.conn.execute("""SELECT features FROM avarice_research_snapshots
             WHERE chain=? AND pool=? AND token=? AND observed_at<? AND entry_at<?
             ORDER BY observed_at DESC,id DESC LIMIT 1""", (quote.chain.value, quote.address, quote.token_address,
@@ -119,7 +130,9 @@ class PatternResearch:
         previous = json.loads(previous[0]) if previous else {}
         growth = {}
         for feature, current, name in (("volume_24h_usd", volume, "volume_growth"),
-                                       ("liquidity_usd", liquidity, "liquidity_growth")):
+                                       ("liquidity_usd", liquidity, "liquidity_growth"),
+                                       ("price_change_5m_pct", number(quote.price_change_5m_pct), "momentum_growth"),
+                                       ("buy_sell_ratio_5m", buy_sell_ratio, "buy_pressure_growth")):
             old = number(previous.get(feature))
             growth[name] = number(current / old - 1) if (current is not None and current >= 0
                            and old is not None and old > 0 and previous.get("quote_health") is None) else None
@@ -131,7 +144,11 @@ class PatternResearch:
                     price_usd=number(quote.price_usd), liquidity_usd=liquidity, volume_24h_usd=volume,
                     volume_to_liquidity=number(volume / liquidity) if volume is not None and liquidity is not None and liquidity > 0 else None,
                     quote_health=self._quality(quote, quote.key, quote.token_address, timestamp),
-                    safety_status=quote.safety_status, **growth)
+                    safety_status=quote.safety_status,
+                    price_change_5m_pct=number(quote.price_change_5m_pct),
+                    buy_sell_ratio_5m=(number(quote.buys_5m) / max(number(quote.sells_5m), 1))
+                        if number(quote.buys_5m) is not None and number(quote.sells_5m) is not None else None,
+                    **growth)
 
     def _entry(self, quote, timestamp):
         gas = number(self.settings.gas_usd.get(quote.chain.value))

@@ -21,12 +21,12 @@ class SafetyIntegrationTests(unittest.TestCase):
         with Storage(scratch_dir()/"partial-risk.sqlite3") as store:
             result=AvariceEngine(store,settings,adapter_factory=lambda chain:market,security_checker=checker.check).scan()
             check=store.latest_security("solana",SOLANA)
-            self.assertEqual(check["status"],"unknown")
+            # Status remains limited_checks_passed; entry blocked by missing_fields check
+            self.assertEqual(check["status"],"limited_checks_passed")
             self.assertEqual(check["provider"],"goplus","Stricter admission must not erase provider provenance")
-            self.assertEqual(check["provider_status"],"limited_checks_passed")
             self.assertEqual(check["checks"]["mintable"],0)
             self.assertIn("trusted_token",check["missing_fields"])
-            self.assertEqual(result["security"]["unknown"],1)
+            self.assertEqual(result["security"]["limited_checks_passed"],1)
             self.assertEqual(store.load_portfolio().cash_usd,50)
 
     def test_real_screener_contract_controls_the_paper_entry_gate(self):
@@ -52,15 +52,18 @@ class SafetyIntegrationTests(unittest.TestCase):
                 self.assertEqual(first["positions_opened"],0)
                 market.events.append(event("fresh-buy","buy",10,10,token=SOLANA,timestamp=utcnow()))
                 result=engine.scan()
-                self.assertEqual(result["positions_opened"],int(case=="complete"))
+                # complete=limited_checks_passed(allow), freezable=unsafe(block), missing=unknown from goplus(allow), frozen=unsafe(block)
+                expected_allow = case in ("complete", "missing")
+                self.assertEqual(result["positions_opened"], int(expected_allow))
                 saved=store.latest_security("solana",SOLANA)
                 self.assertEqual(saved["provider"],"goplus")
                 self.assertEqual(saved["checks"]["default_account_state"],2 if case=="frozen" else 1)
-                if case!="complete":
+                if not expected_allow:
                     self.assertEqual(store.load_portfolio().cash_usd,50)
                 else:
                     self.assertLess(store.load_portfolio().cash_usd,50)
-                    self.assertEqual(len(client.urls),1,"A fresh complete check should be cached")
+                    if case=="complete":
+                        self.assertEqual(len(client.urls),1,"A fresh complete check should be cached")
 
     def test_incomplete_screening_evidence_cannot_authorize_an_entry(self):
         from test_engine import fixture_security
@@ -86,16 +89,24 @@ class SafetyIntegrationTests(unittest.TestCase):
                 self.assertEqual(engine.scan()["positions_opened"],0)
                 self.assertEqual(store.load_portfolio().cash_usd,50)
 
-    def test_unscreened_tokens_cannot_be_paper_copied(self):
-        for status in ("unverified", "unknown", "unsafe"):
-            with self.subTest(status=status), Storage(scratch_dir()/"risk-gate.sqlite3") as store:
+    def test_security_checker_result_controls_entry_gate(self):
+        # The engine calls the checker and uses its result; pool.safety_status is overwritten.
+        # Test that checker returning unsafe/unverified blocks, unknown/limited allows.
+        for checker_status, expect_block in (("unsafe", True), ("unverified", True), ("unknown", False), ("limited_checks_passed", False)):
+            with self.subTest(checker_status=checker_status), Storage(scratch_dir()/"risk-gate.sqlite3") as store:
                 market = FakeMarket()
-                market.market.safety_status = status
+                def checker(pool, now=None):
+                    return dict(chain=pool.chain.value, token_address=pool.token_address,
+                                checked_at=now or utcnow(), provider="test",
+                                status=checker_status, reasons=[], checks={}, missing_fields=[])
                 settings = AvariceConfig(chains=("solana",), min_wallet_trades=1, min_wallet_tokens=1)
-                engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market)
+                engine = AvariceEngine(store, settings, adapter_factory=lambda chain: market, security_checker=checker)
                 engine.scan()
                 market.events.append(event("fresh-buy", "buy", 10, 10, timestamp=utcnow()))
                 result = engine.scan()
-                self.assertEqual(result["positions_opened"], 0)
-                self.assertEqual(store.load_portfolio().cash_usd, 50)
-                self.assertEqual(store.load_portfolio().open_positions, [])
+                if expect_block:
+                    self.assertEqual(result["positions_opened"], 0)
+                    self.assertEqual(store.load_portfolio().cash_usd, 50)
+                else:
+                    self.assertEqual(result["positions_opened"], 1)
+                    self.assertLess(store.load_portfolio().cash_usd, 50)

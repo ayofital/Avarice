@@ -17,7 +17,7 @@ class Simulator:
         except (ValueError, TypeError):
             return None
         if (quote_age < 0 or quote_age > settings.quote_max_age_seconds
-                or pool.safety_status != "limited_checks_passed"):
+                or pool.safety_status == "unsafe"):
             return None
         if (len(portfolio.open_positions) >= settings.max_concurrent_positions
                 or portfolio.max_drawdown_pct >= settings.max_drawdown_pct

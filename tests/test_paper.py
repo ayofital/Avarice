@@ -40,17 +40,22 @@ class PaperTests(unittest.TestCase):
         self.assertEqual(sim.portfolio.cash_usd,45)
 
 
-    def test_simulator_rejects_unknown_and_unsafe_entries_even_without_engine(self):
+    def test_simulator_blocks_unsafe_allows_unknown_and_unverified(self):
         from avarice.config.settings import AvariceConfig
         from avarice.core.models import Chain, Pool, VirtualPortfolio
         from avarice.core.simulator import Simulator
-        for status in ("unverified","unknown","unsafe"):
+        for status, blocked in (("unsafe", True), ("unknown", False), ("unverified", False)):
             with self.subTest(status=status):
                 sim=Simulator(VirtualPortfolio.new(50),AvariceConfig())
                 quote=Pool(Chain.SOLANA,"synthetic-pool","synthetic-mint","SYN",1,10000,1000,None,
                            safety_status=status)
-                self.assertIsNone(sim.open_position(quote,"synthetic-sender"))
-                self.assertEqual(sim.portfolio.cash_usd,50)
+                result = sim.open_position(quote,"synthetic-sender")
+                if blocked:
+                    self.assertIsNone(result)
+                    self.assertEqual(sim.portfolio.cash_usd,50)
+                else:
+                    self.assertIsNotNone(result)
+                    self.assertLess(sim.portfolio.cash_usd,50)
 
 
     def test_round_trip_persists_positions_and_charges_both_sides(self):
