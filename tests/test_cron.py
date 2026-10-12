@@ -13,6 +13,6 @@ class CronTests(unittest.TestCase):
         self.assertTrue(all(job["no_agent"] for job in jobs))
         self.assertEqual(jobs[0]["deliver"], "local")
         self.assertEqual(jobs[1]["deliver"], "telegram:1234")
-        self.assertEqual(jobs[1]["schedule"], "0 8,20 * * *")
+        self.assertEqual(jobs[1]["schedule"], "every 3h")
         self.assertTrue(all(job["script"].endswith(".py") for job in jobs))
         self.assertNotIn("chat -q", repr(jobs))
