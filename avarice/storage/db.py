@@ -115,3 +115,7 @@ class Storage:
     def latest_scan(self):
         row = self.conn.execute("SELECT payload FROM avarice_scans ORDER BY id DESC LIMIT 1").fetchone()
         return json.loads(row[0]) if row else None
+
+    def recent_signals(self, limit=50):
+        rows = self.conn.execute("""SELECT payload FROM avarice_events ORDER BY rowid DESC LIMIT ?""", (limit,))
+        return [json.loads(row[0]) for row in rows]

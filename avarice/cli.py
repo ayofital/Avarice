@@ -9,7 +9,7 @@ def parser():
     result.add_argument("--chains", help="Comma-separated chains; overrides local settings")
     result.add_argument("--json", action="store_true", help="Print machine-readable output")
     commands = result.add_subparsers(dest="command", required=True)
-    for name in ("scan", "update", "status", "positions", "wallets", "report", "config", "security", "research"):
+    for name in ("scan", "update", "status", "positions", "wallets", "report", "config", "security", "research", "leaderboard", "tape", "alerts"):
         commands.add_parser(name)
     return result
 
@@ -46,6 +46,20 @@ def run_command(args):
             elif args.command == "research":
                 from avarice.core.research import PatternResearch
                 output = PatternResearch(store, settings).summary()
+            elif args.command == "leaderboard":
+                from avarice.core.wallet_tracker import WalletTracker
+                quotes = {pool.key: pool for pool in store.pools()}
+                output = WalletTracker(store, settings).metrics(quotes)
+            elif args.command == "tape":
+                from avarice.storage.db import Storage
+                output = store.recent_signals(limit=50)
+            elif args.command == "alerts":
+                from avarice.core.engine import AvariceEngine
+                from avarice.chains.public import HttpClient, PublicMarketAdapter
+                client = HttpClient(settings)
+                factory = lambda chain: PublicMarketAdapter(chain, client)
+                engine = AvariceEngine(store, settings, adapter_factory=factory)
+                output = engine.check_fresh_signals()
             elif args.command == "report":
                 from avarice.reporting.telegram import TelegramReporter
                 print(TelegramReporter(store, settings).render())

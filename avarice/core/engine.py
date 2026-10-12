@@ -18,6 +18,42 @@ class AvariceEngine:
         quotes = {pool.key: pool for pool in self.storage.pools()}
         return WalletTracker(self.storage, self.settings).metrics(quotes)
 
+    def check_fresh_signals(self):
+        """Return fresh qualified buy signals from last scan for alerting."""
+        quotes = {pool.key: pool for pool in self.storage.pools()}
+        tracker = WalletTracker(self.storage, self.settings)
+        metrics = tracker.metrics(quotes)
+        qualified_senders = {(row["chain"], row["address"]) for row in metrics if row["qualified"]}
+        previous = self.storage.latest_scan()
+        if not previous:
+            return []
+        alerts = []
+        for chain_name in self.settings.chains:
+            chain_events = self.storage.get_state(f"last_events_{chain_name}", [])
+            for event in chain_events:
+                if event.get("side") != "buy":
+                    continue
+                age = (utcnow() - event.get("timestamp", "")).total_seconds() if event.get("timestamp") else float("inf")
+                if age > self.settings.signal_max_age_seconds:
+                    continue
+                key = (event["chain"], event["wallet"])
+                if key in qualified_senders:
+                    pool = quotes.get((event["chain"], event["pool_address"]))
+                    if pool and pool.safety_status in ("limited_checks_passed", "unknown"):
+                        alerts.append(dict(
+                            chain=event["chain"],
+                            wallet=event["wallet"],
+                            symbol=pool.symbol,
+                            pool_address=event["pool_address"],
+                            token_address=event["token_address"],
+                            price_usd=pool.price_usd,
+                            liquidity_usd=pool.liquidity_usd,
+                            volume_24h_usd=pool.volume_24h_usd,
+                            signal_age_seconds=age,
+                            signal_time=event["timestamp"]
+                        ))
+        return alerts
+
     def scan(self, discover=True):
         if self.adapter_factory is None:
             from avarice.chains.public import HttpClient, PublicMarketAdapter

@@ -9,7 +9,7 @@ class CronTests(unittest.TestCase):
         except (AttributeError, ImportError) as exc:
             self.fail(f"Cron definitions must use supported no-agent jobs: {exc}")
         jobs = get_cron_jobs("telegram:1234")
-        self.assertEqual(len(jobs), 2)
+        self.assertEqual(len(jobs), 3)
         self.assertTrue(all(job["no_agent"] for job in jobs))
         self.assertEqual(jobs[0]["deliver"], "local")
         self.assertEqual(jobs[1]["deliver"], "telegram:1234")
