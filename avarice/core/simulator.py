@@ -2,12 +2,15 @@
 import math
 import uuid
 from avarice.core.models import VirtualPosition, utcnow, parse_time
+from datetime import date
 
 
 class Simulator:
     def __init__(self, portfolio, settings):
         self.portfolio = portfolio
         self.settings = settings
+        self.daily_loss_usd = 0.0
+        self.daily_loss_date = None
 
     def open_position(self, pool, wallet):
         settings = self.settings
@@ -19,6 +22,18 @@ class Simulator:
         if (quote_age < 0 or quote_age > settings.quote_max_age_seconds
                 or pool.safety_status == "unsafe"):
             return None
+        # Kill switch checks
+        if settings.kill_switch_enabled:
+            if portfolio.max_drawdown_pct >= settings.max_drawdown_pct:
+                return None
+            # Daily loss cap
+            today = date.today()
+            if self.daily_loss_date != today:
+                self.daily_loss_date = today
+                self.daily_loss_usd = 0.0
+            if self.daily_loss_usd >= portfolio.starting_capital_usd * settings.daily_loss_cap_pct / 100:
+                return None
+
         if (len(portfolio.open_positions) >= settings.max_concurrent_positions
                 or portfolio.max_drawdown_pct >= settings.max_drawdown_pct
                 or not math.isfinite(pool.price_usd) or pool.price_usd <= 0
@@ -104,5 +119,8 @@ class Simulator:
         position.exit_time = utcnow()
         position.pnl_usd = net - position.entry_cost_usd
         self.portfolio.cash_usd += net
+        # Track daily loss for kill switch
+        if position.pnl_usd < 0:
+            self.daily_loss_usd += abs(position.pnl_usd)
         self.portfolio.mark()
         return True

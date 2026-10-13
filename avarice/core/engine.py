@@ -5,6 +5,8 @@ from avarice.core.pool_watcher import PoolWatcher
 from avarice.core.research import PatternResearch
 from avarice.core.simulator import Simulator
 from avarice.core.wallet_tracker import WalletTracker
+from avarice.core.brain import Brain
+from avarice.core.reflex import Reflex
 
 
 class AvariceEngine:
@@ -13,6 +15,8 @@ class AvariceEngine:
         self.settings = settings
         self.adapter_factory = adapter_factory
         self.security_checker = security_checker
+        self.brain = Brain(storage, settings)
+        self.reflex = Reflex(storage, settings)
 
     def wallet_metrics(self):
         quotes = {pool.key: pool for pool in self.storage.pools()}
@@ -173,6 +177,15 @@ class AvariceEngine:
                         result["positions_opened"] += 1
             research.advance(quotes, fresh_signals, before, now=timestamp.isoformat())
             result["research"] = research.summary(now=timestamp.isoformat())
+
+            # BRAIN cycle (runs periodically)
+            if self.brain.should_run():
+                brain_result = self.brain.run_cycle()
+                result["brain"] = dict(cycle_id=brain_result["cycle_id"], status="completed")
+
+            # REFLEX: fast signal detection
+            reflex_actions = self.reflex.detect_and_act(quotes, fresh_signals)
+            result["reflex_actions"] = len(reflex_actions)
             result["wallets_tracked"] = len(metrics)
             result["wallets_qualified"] = sum(row["qualified"] for row in metrics)
             result["portfolio"] = simulator.portfolio.summary()

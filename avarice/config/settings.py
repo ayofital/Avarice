@@ -38,6 +38,14 @@ class AvariceConfig:
     http_timeout_seconds: float = 15.0
     http_min_interval_seconds: float = 6.5
     scan_budget_seconds: float = 120.0
+    # BRAIN/REFLEX split
+    brain_enabled: bool = True
+    brain_schedule_hours: int = 24
+    reflex_max_latency_ms: int = 100
+    # Risk controls
+    daily_loss_cap_pct: float = 5.0
+    kill_switch_enabled: bool = True
+    max_drawdown_pct: float = 15.0
     safety_max_age_seconds: float = 600.0
     research_enabled: bool = True
     research_horizon_minutes: float = 60.0
